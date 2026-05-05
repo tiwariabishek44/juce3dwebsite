@@ -13,6 +13,7 @@ const SITE_DESCRIPTION =
   "Hand-whisked matcha meets dynamic refreshment. A hyper-realistic taste sensation.";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://juce3dwebsite.vercel.app"),
   title: SITE_TITLE,
   description: SITE_DESCRIPTION,
   icons: {
