@@ -8,10 +8,35 @@ const inter = Inter({
   display: "swap",
 });
 
+const SITE_TITLE = "Matcha Cafe — Iced Latte";
+const SITE_DESCRIPTION =
+  "Hand-whisked matcha meets dynamic refreshment. A hyper-realistic taste sensation.";
+
 export const metadata: Metadata = {
-  title: "Matcha Cafe — Iced Latte",
-  description:
-    "Hand-whisked matcha meets dynamic refreshment. A hyper-realistic taste sensation.",
+  title: SITE_TITLE,
+  description: SITE_DESCRIPTION,
+  icons: {
+    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
+  },
+  openGraph: {
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    type: "website",
+    images: [
+      {
+        url: "/og.jpg",
+        width: 1200,
+        height: 630,
+        alt: "Matcha Cafe — Iced Latte",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    images: ["/og.jpg"],
+  },
 };
 
 export const viewport: Viewport = {

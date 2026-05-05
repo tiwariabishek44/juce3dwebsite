@@ -20,6 +20,10 @@ const config: Config = {
       },
       colors: {
         void: "#050505",
+        matcha: {
+          dark: "#3D6E4E",
+          light: "#7CA982",
+        },
       },
     },
   },

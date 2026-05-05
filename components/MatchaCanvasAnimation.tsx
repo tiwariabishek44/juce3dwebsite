@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   motion,
   useScroll,
-  useSpring,
   useTransform,
   type MotionValue,
 } from "framer-motion";
@@ -44,6 +43,11 @@ type Props = {
   id?: string;
 };
 
+/** Stride for priority preload — first wave loads every Nth frame so the
+ *  user can begin scrolling before the full set arrives. Remaining frames
+ *  fill in over the background. */
+const PRIORITY_STRIDE = 4;
+
 export default function MatchaCanvasAnimation({
   frameCount,
   framePrefix,
@@ -65,18 +69,20 @@ export default function MatchaCanvasAnimation({
   const [loadedCount, setLoadedCount] = useState(0);
   const [ready, setReady] = useState(false);
 
-  const { scrollYProgress } = useScroll({
+  // Raw scroll drives the canvas — no spring. The previous useSpring
+  // smoothing introduced 120-200 ms of input lag that read as "scroll
+  // and visuals out of sync." With img.decode() pre-decoding all frames
+  // and rAF-coalesced draws, raw scroll is the buttery path. The CSS
+  // global prefers-reduced-motion rule still kills the scroll-cue
+  // animation for users who opted out.
+  const { scrollYProgress: progress } = useScroll({
     target: containerRef,
     offset: ["start start", "end end"],
   });
 
-  const smoothProgress = useSpring(scrollYProgress, {
-    stiffness: 80,
-    damping: 26,
-    mass: 0.5,
-  });
-
-  // Trigger preload when nearing the viewport (lazyLoad mode)
+  // Trigger preload when the section nears the viewport (lazyLoad mode).
+  // Tightened rootMargin so Story 2 doesn't fetch while the user is still
+  // ingesting Story 1.
   useEffect(() => {
     if (!lazyLoad) return;
     const el = containerRef.current;
@@ -88,39 +94,78 @@ export default function MatchaCanvasAnimation({
           obs.disconnect();
         }
       },
-      { rootMargin: "200% 0px 200% 0px" }
+      { rootMargin: "50% 0px 50% 0px" }
     );
     obs.observe(el);
     return () => obs.disconnect();
   }, [lazyLoad]);
 
-  // Preload all frames
+  // Staged preload: priority frames (every Nth) first → mark ready as soon
+  // as those complete so the user can start scrolling. Remaining frames
+  // fill in the background; un-loaded frames are skipped by the draw guard.
   useEffect(() => {
     if (!shouldPreload) return;
     let cancelled = false;
     const images: HTMLImageElement[] = new Array(frameCount);
-    let loaded = 0;
+    let totalLoaded = 0;
 
-    const tick = () => {
-      loaded += 1;
-      if (cancelled) return;
-      setLoadedCount(loaded);
-      if (loaded >= frameCount) setReady(true);
+    const buildSrc = (i: number) =>
+      `${framePrefix}${String(frameStart + i).padStart(framePadding, "0")}${frameSuffix}`;
+
+    const loadIndices = (
+      indices: number[],
+      priority: "high" | "low",
+      onWaveDone?: () => void
+    ) => {
+      let waveLoaded = 0;
+      const waveSize = indices.length;
+      if (waveSize === 0) {
+        onWaveDone?.();
+        return;
+      }
+      indices.forEach((i) => {
+        const img = new Image();
+        img.decoding = "async";
+        // fetchPriority is standard on HTMLImageElement; lib types lag.
+        (img as unknown as { fetchPriority?: string }).fetchPriority = priority;
+        const tick = () => {
+          if (cancelled) return;
+          totalLoaded += 1;
+          setLoadedCount(totalLoaded);
+          waveLoaded += 1;
+          if (waveLoaded === waveSize) onWaveDone?.();
+        };
+        img.src = buildSrc(i);
+        images[i] = img;
+        // img.decode() resolves only when the bitmap is fully decoded
+        // and ready for drawImage — no stutter on first paint of a
+        // new frame. Falls back to onload semantics on rejection.
+        img
+          .decode()
+          .then(tick)
+          .catch(tick);
+      });
     };
 
+    const priorityIdx: number[] = [];
+    const restIdx: number[] = [];
     for (let i = 0; i < frameCount; i++) {
-      const img = new Image();
-      img.decoding = "async";
-      img.src = `${framePrefix}${String(frameStart + i).padStart(framePadding, "0")}${frameSuffix}`;
-      img.onload = tick;
-      img.onerror = tick;
-      images[i] = img;
+      if (i % PRIORITY_STRIDE === 0) priorityIdx.push(i);
+      else restIdx.push(i);
     }
+
     imagesRef.current = images;
+
+    loadIndices(priorityIdx, "high", () => {
+      if (cancelled) return;
+      setReady(true);
+      loadIndices(restIdx, "low");
+    });
 
     return () => {
       cancelled = true;
       images.forEach((img) => {
+        if (!img) return;
         img.onload = null;
         img.onerror = null;
       });
@@ -134,6 +179,10 @@ export default function MatchaCanvasAnimation({
     if (!canvas) return;
     const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) return;
+    // Source frames are 4K (3840×2160); always rendered at viewport size.
+    // High-quality smoothing prevents shimmer on the downscale path.
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
 
     const currentFrameIndex = (p: number) => {
       const clamped = Math.max(0, Math.min(1, p));
@@ -143,7 +192,11 @@ export default function MatchaCanvasAnimation({
     const drawFrame = (idx: number) => {
       if (idx === lastDrawnFrame.current) return;
       const img = imagesRef.current[idx];
-      if (!img || !img.complete || !img.naturalWidth) return;
+      // If the requested frame hasn't loaded yet, fall back to the nearest
+      // already-loaded frame to avoid a black flash.
+      const resolved =
+        img && img.complete && img.naturalWidth ? img : findNearest(idx);
+      if (!resolved) return;
 
       const w = window.innerWidth;
       const h = window.innerHeight;
@@ -153,7 +206,7 @@ export default function MatchaCanvasAnimation({
       ctx.fillRect(0, 0, w, h);
 
       // "cover" fit: fill viewport edge-to-edge, center-crop overflow
-      const ir = img.naturalWidth / img.naturalHeight;
+      const ir = resolved.naturalWidth / resolved.naturalHeight;
       const cr = w / h;
       let dw: number;
       let dh: number;
@@ -167,8 +220,19 @@ export default function MatchaCanvasAnimation({
       const dx = (w - dw) / 2;
       const dy = (h - dh) / 2;
 
-      ctx.drawImage(img, dx, dy, dw, dh);
+      ctx.drawImage(resolved, dx, dy, dw, dh);
       lastDrawnFrame.current = idx;
+    };
+
+    const findNearest = (idx: number): HTMLImageElement | null => {
+      const list = imagesRef.current;
+      for (let r = 1; r < frameCount; r++) {
+        const lo = list[idx - r];
+        if (lo && lo.complete && lo.naturalWidth) return lo;
+        const hi = list[idx + r];
+        if (hi && hi.complete && hi.naturalWidth) return hi;
+      }
+      return null;
     };
 
     const resize = () => {
@@ -181,13 +245,19 @@ export default function MatchaCanvasAnimation({
       canvas.style.height = `${h}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       lastDrawnFrame.current = -1;
-      drawFrame(currentFrameIndex(smoothProgress.get()));
+      drawFrame(currentFrameIndex(progress.get()));
     };
 
     resize();
 
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    const onResize = () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(resize, 150);
+    };
+
     let rafId = 0;
-    const unsub = smoothProgress.on("change", (p) => {
+    const unsub = progress.on("change", (p) => {
       if (rafId) return;
       rafId = requestAnimationFrame(() => {
         drawFrame(currentFrameIndex(p));
@@ -195,20 +265,21 @@ export default function MatchaCanvasAnimation({
       });
     });
 
-    window.addEventListener("resize", resize);
+    window.addEventListener("resize", onResize);
 
     return () => {
       unsub();
-      window.removeEventListener("resize", resize);
+      window.removeEventListener("resize", onResize);
+      if (resizeTimer) clearTimeout(resizeTimer);
       if (rafId) cancelAnimationFrame(rafId);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     };
-  }, [ready, smoothProgress, frameCount]);
+  }, [ready, progress, frameCount]);
 
   // Scroll cue — driven by smoothed progress for consistent easing
-  const cueOpacity = useTransform(smoothProgress, [0, 0.05, 0.1], [1, 0.8, 0]);
-  const cueY = useTransform(smoothProgress, [0, 0.1], [0, 12]);
+  const cueOpacity = useTransform(progress, [0, 0.05, 0.1], [1, 0.8, 0]);
+  const cueY = useTransform(progress, [0, 0.1], [0, 12]);
 
   const loadingPct = Math.floor((loadedCount / frameCount) * 100);
   const showLoader = shouldPreload && !ready;
@@ -217,7 +288,7 @@ export default function MatchaCanvasAnimation({
     <section
       id={id}
       ref={containerRef}
-      className="relative w-full bg-[#050505]"
+      className="relative w-full bg-void"
       style={{ height: `${scrollHeightVh}vh` }}
     >
       <div className="sticky top-0 h-screen w-full overflow-hidden">
@@ -228,7 +299,7 @@ export default function MatchaCanvasAnimation({
         />
 
         {showLoader && (
-          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#050505]">
+          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-void">
             <div className="relative mb-8 h-12 w-12">
               <span className="absolute inset-0 rounded-full border border-white/10" />
               <span className="absolute inset-0 animate-spin rounded-full border-t border-white/80" />
@@ -246,11 +317,7 @@ export default function MatchaCanvasAnimation({
         )}
 
         {beats.map((beat) => (
-          <BeatOverlay
-            key={beat.id}
-            beat={beat}
-            progress={smoothProgress}
-          />
+          <BeatOverlay key={beat.id} beat={beat} progress={progress} />
         ))}
 
         {showScrollCue && (

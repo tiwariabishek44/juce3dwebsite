@@ -47,3 +47,38 @@ body {
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.08) #050505;
 }
+
+/* Skip-cinematic link — visually hidden until focused */
+.skip-link {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -120%);
+  z-index: 100;
+  padding: 0.6rem 1rem;
+  background: #050505;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  transition: transform 200ms ease;
+}
+.skip-link:focus {
+  transform: translate(-50%, 12px);
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

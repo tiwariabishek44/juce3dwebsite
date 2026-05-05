@@ -6,3 +6,10 @@ out
 .env*.local
 .DS_Store
 *.log
+tsconfig.tsbuildinfo
+
+# Source-only frame assets — runtime copies live in /public.
+# (If 22 MB of frames were already committed at /images, run
+#  `git rm -r --cached images` to untrack without deleting locally.)
+/images/
+/.dist/

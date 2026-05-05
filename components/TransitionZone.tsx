@@ -44,7 +44,7 @@ export default function TransitionZone() {
   return (
     <section
       ref={ref}
-      className="relative h-[80vh] w-full overflow-hidden bg-[#050505]"
+      className="relative h-[80vh] w-full overflow-hidden bg-void"
       aria-label="Interlude"
     >
       {/* Deep matcha aura — large blurred disc, never touches the edges */}
@@ -53,7 +53,7 @@ export default function TransitionZone() {
         className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
         aria-hidden="true"
       >
-        <div className="h-[80vmin] w-[80vmin] rounded-full bg-[#3D6E4E] opacity-40 blur-[140px]" />
+        <div className="h-[80vmin] w-[80vmin] rounded-full bg-matcha-dark opacity-40 blur-[140px]" />
       </motion.div>
 
       {/* Inner brighter core for depth */}
@@ -62,7 +62,7 @@ export default function TransitionZone() {
         className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
         aria-hidden="true"
       >
-        <div className="h-[40vmin] w-[40vmin] rounded-full bg-[#7CA982] opacity-25 blur-[100px]" />
+        <div className="h-[40vmin] w-[40vmin] rounded-full bg-matcha-light opacity-25 blur-[100px]" />
       </motion.div>
 
       {/* Subtle noise overlay to prevent gradient banding */}
@@ -75,14 +75,14 @@ export default function TransitionZone() {
         aria-hidden="true"
       />
 
-      {/* Top + bottom safety fades — keep edges firmly #050505 so the
+      {/* Top + bottom safety fades — keep edges firmly void so the
           handoff with each canvas is invisible */}
       <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-[20vh] bg-gradient-to-b from-[#050505] to-transparent"
+        className="pointer-events-none absolute inset-x-0 top-0 h-[20vh] bg-gradient-to-b from-void to-transparent"
         aria-hidden="true"
       />
       <div
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-[20vh] bg-gradient-to-t from-[#050505] to-transparent"
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-[20vh] bg-gradient-to-t from-void to-transparent"
         aria-hidden="true"
       />
 
@@ -95,7 +95,7 @@ export default function TransitionZone() {
           className="text-5xl font-light text-white/75 md:text-6xl"
           style={{
             fontFamily:
-              "'Hiragino Mincho ProN', 'Yu Mincho', 'YuMincho', 'Noto Serif JP', serif",
+              "'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif JP', serif",
             letterSpacing: "0.15em",
           }}
         >
